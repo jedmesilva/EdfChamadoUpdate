@@ -204,7 +204,11 @@ export const authService = {
         .from('account_user')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .single()
+        .headers({
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        });
 
       if (error) throw error;
       return data;
