@@ -156,18 +156,36 @@ export default async function handler(req, res) {
       });
     }
 
-    // Não tente criar profile, apenas registre o usuário na auth.users
-    // O perfil será criado em um passo separado após o login
-    console.log(`Usuário registrado apenas na auth.users. O perfil será criado após o login.`);
+    // Criar o registro na account_user imediatamente
+    console.log(`Criando registro na account_user para ${email}`);
     
-    console.log(`Usuário cadastrado com sucesso: ${email}, ID: ${authUser.id}`);
+    const { data: accountUser, error: accountError } = await supabase
+      .from('account_user')
+      .insert({
+        id: authUser.user.id,
+        user_id: authUser.user.id,
+        name,
+        email,
+        status: 'active',
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (accountError) {
+      console.error('Erro ao criar registro na account_user:', accountError);
+      throw accountError;
+    }
+
+    console.log(`Usuário cadastrado com sucesso: ${email}, ID: ${authUser.user.id}`);
+    console.log('Registro account_user criado:', accountUser);
     
     return res.status(201).json({
       message: "Usuário criado com sucesso",
-      userId: authUser.id, 
-      email: authUser.email,
-      name: name, // Retorna o nome fornecido
-      needsProfile: true // Flag indicando que o perfil precisa ser criado após o login
+      userId: authUser.user.id,
+      email: authUser.user.email,
+      name: name,
+      accountUser
     });
     
   } catch (error) {
