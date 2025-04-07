@@ -246,10 +246,6 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(true);
       console.log(`Iniciando criação de perfil para ${email} com nome ${name}`);
       
-      if (!session) {
-        throw new Error("Usuário precisa estar autenticado para criar perfil");
-      }
-      
       console.log("Tentando criar perfil via API em: /api/auth/create-profile");
       
       const response = await fetch("/api/auth/create-profile", {
