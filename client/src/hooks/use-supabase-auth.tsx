@@ -10,6 +10,7 @@ type SupabaseAuthContextType = {
   isLoading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
+  createProfile: (name: string, email: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -181,11 +182,10 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         
         toast({
           title: "Cadastro realizado com sucesso",
-          description: "Fazendo login automaticamente...",
+          description: "Conta criada com sucesso",
         });
         
-        // Faz login automaticamente após o cadastro
-        await signIn(email, password);
+        // Não faz login automaticamente - isso será gerenciado pelo fluxo de formulário
         return;
       } catch (apiError) {
         console.error("Erro na API de registro, tentando diretamente com Supabase:", apiError);
@@ -211,11 +211,10 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         console.log("Registro direto via Supabase bem-sucedido", data.user);
         toast({
           title: "Cadastro realizado com sucesso",
-          description: "Fazendo login automaticamente...",
+          description: "Conta criada com sucesso",
         });
         
-        // Faz login automaticamente após o cadastro
-        await signIn(email, password);
+        // Não faz login automaticamente - isso será gerenciado pelo fluxo de formulário
       } else {
         throw new Error("Não foi possível criar o usuário");
       }
@@ -233,6 +232,78 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
       
       toast({
         title: "Erro ao criar conta",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const createProfile = async (name: string, email: string) => {
+    try {
+      setIsLoading(true);
+      console.log(`Iniciando criação de perfil para ${email} com nome ${name}`);
+      
+      if (!session) {
+        throw new Error("Usuário precisa estar autenticado para criar perfil");
+      }
+      
+      console.log("Tentando criar perfil via API em: /api/auth/create-profile");
+      
+      const response = await fetch("/api/auth/create-profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          name,
+          email,
+          user_id: user?.id,
+          session
+        }),
+        credentials: "include"
+      });
+      
+      console.log(`Resposta do servidor: ${response.status} ${response.statusText}`);
+      
+      let responseData;
+      const responseText = await response.text();
+      
+      try {
+        if (responseText) {
+          responseData = JSON.parse(responseText);
+          console.log("Resposta parseada do servidor:", responseData);
+        }
+      } catch (parseError) {
+        console.error("Erro ao parsear resposta:", parseError, "Texto da resposta:", responseText);
+      }
+      
+      if (!response.ok) {
+        console.error(`Erro na API de criação de perfil: ${response.status} - ${responseText}`);
+        throw new Error(`Erro na criação de perfil: ${response.status} - ${responseText || response.statusText}`);
+      }
+      
+      toast({
+        title: "Perfil criado com sucesso",
+        description: "Seu perfil foi configurado corretamente",
+      });
+      
+      return;
+    } catch (error: any) {
+      let errorMessage = "Tente novamente mais tarde";
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMessage = String(error.message);
+      }
+      
+      console.error("Erro na criação do perfil:", errorMessage);
+      
+      toast({
+        title: "Erro ao criar perfil",
         description: errorMessage,
         variant: "destructive",
       });
@@ -271,6 +342,7 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         signIn,
         signUp,
+        createProfile,
         signOut,
       }}
     >

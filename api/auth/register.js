@@ -156,152 +156,18 @@ export default async function handler(req, res) {
       });
     }
 
-    // 3. Buscar se já existe um account_user com este email
-    const { data: existingAccount, error: accountCheckError } = await supabase
-      .from('account_user')
-      .select('*')
-      .eq('email', email)
-      .maybeSingle();
-    
-    if (accountCheckError && accountCheckError.code !== 'PGRST116') {
-      console.error('Erro ao verificar conta existente:', accountCheckError);
-    }
-    
-    let accountUser;
-    
-    try {
-      if (existingAccount) {
-        // Atualizar o usuário existente
-        console.log(`Atualizando account_user existente para ${email} com ID ${authUser.id}`);
-        const { data: updatedUser, error: updateError } = await supabase
-          .from('account_user')
-          .update({
-            id: authUser.id, // Atualiza para usar o ID do auth.users 
-            user_id: authUser.id,
-            name,
-            status: 'active',
-          })
-          .eq('email', email)
-          .select()
-          .single();
-
-        if (updateError) {
-          console.error('Erro ao atualizar conta existente:', updateError);
-          throw new Error(`Erro ao atualizar conta existente: ${updateError.message}`);
-        }
-        
-        accountUser = updatedUser;
-        console.log(`Conta existente atualizada com sucesso: ${JSON.stringify(accountUser)}`);
-      } else {
-        // Criar um novo account_user
-        console.log(`Tentando criar novo account_user com ID ${authUser.id}`);
-        
-        // Primeira tentativa - usando o método padrão
-        const { data: newUser, error: insertError } = await supabase
-          .from('account_user')
-          .insert({
-            id: authUser.id,
-            user_id: authUser.id,
-            name,
-            email,
-            status: 'active',
-            created_at: new Date().toISOString(),
-          })
-          .select()
-          .single();
-
-        if (insertError) {
-          console.error('Erro na primeira tentativa:', JSON.stringify(insertError));
-          
-          // Segunda tentativa - usando upsert
-          console.log('Tentando abordagem com upsert');
-          const { data: upsertUser, error: upsertError } = await supabase
-            .from('account_user')
-            .upsert({
-              id: authUser.id,
-              user_id: authUser.id,
-              name,
-              email,
-              status: 'active',
-              created_at: new Date().toISOString(),
-            })
-            .select()
-            .single();
-            
-          if (upsertError) {
-            console.error('Erro na segunda tentativa (upsert):', JSON.stringify(upsertError));
-            
-            // Terceira tentativa - usando RPC (se existir)
-            try {
-              console.log('Tentando terceira abordagem com RPC');
-              const { data: rpcResult, error: rpcError } = await supabase.rpc('create_account_user', {
-                p_id: authUser.id,
-                p_user_id: authUser.id,
-                p_name: name,
-                p_email: email,
-                p_status: 'active',
-                p_created_at: new Date().toISOString()
-              });
-              
-              if (rpcError) {
-                console.error('Erro na terceira tentativa (RPC):', JSON.stringify(rpcError));
-                
-                // Quarta tentativa - Query SQL nativa pelo driver
-                console.log('Tentando quarta abordagem com SQL nativo');
-                const { data: sqlResult, error: sqlError } = await supabase.from('account_user')
-                  .insert([
-                    {
-                      id: authUser.id,
-                      user_id: authUser.id,
-                      name: name,
-                      email: email,
-                      status: 'active',
-                      created_at: new Date().toISOString()
-                    }
-                  ])
-                  .select();
-                
-                if (sqlError) {
-                  console.error('Todas as abordagens falharam:', sqlError);
-                  throw new Error(`Múltiplas falhas ao criar account_user: ${sqlError.message}`);
-                }
-                
-                accountUser = sqlResult[0];
-                console.log(`account_user criado com sucesso via SQL nativo: ${JSON.stringify(accountUser)}`);
-              } else {
-                accountUser = rpcResult;
-                console.log(`account_user criado com sucesso via RPC: ${JSON.stringify(accountUser)}`);
-              }
-            } catch (fallbackError) {
-              console.error('Erro nas tentativas alternativas:', fallbackError);
-              throw new Error(`Múltiplas falhas ao criar account_user: ${fallbackError.message}`);
-            }
-          } else {
-            accountUser = upsertUser;
-            console.log(`account_user criado com sucesso via upsert: ${JSON.stringify(accountUser)}`);
-          }
-        } else {
-          accountUser = newUser;
-          console.log(`account_user criado com sucesso: ${JSON.stringify(accountUser)}`);
-        }
-      }
-    } catch (dbError) {
-      console.error('Erro no processo de account_user:', dbError);
-      return res.status(500).json({
-        error: 'Erro ao processar conta de usuário',
-        details: dbError.message || String(dbError)
-      });
-    }
+    // Não tente criar profile, apenas registre o usuário na auth.users
+    // O perfil será criado em um passo separado após o login
+    console.log(`Usuário registrado apenas na auth.users. O perfil será criado após o login.`);
     
     console.log(`Usuário cadastrado com sucesso: ${email}, ID: ${authUser.id}`);
-    console.log(`Conta de usuário: ${JSON.stringify(accountUser)}`);
     
     return res.status(201).json({
       message: "Usuário criado com sucesso",
       userId: authUser.id, 
       email: authUser.email,
-      name: accountUser.name,
-      accountUser: accountUser // Incluindo os dados da tabela account_user
+      name: name, // Retorna o nome fornecido
+      needsProfile: true // Flag indicando que o perfil precisa ser criado após o login
     });
     
   } catch (error) {

@@ -27,7 +27,7 @@ const registerSchema = insertUserSchema;
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
 const AuthPage = () => {
-  const { user, isLoading, signIn, signUp, signOut } = useSupabaseAuth();
+  const { user, isLoading, signIn, signUp, createProfile, signOut } = useSupabaseAuth();
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState<string>("login");
   const [emailFromSubscription, setEmailFromSubscription] = useState<string>("");
@@ -109,8 +109,28 @@ const AuthPage = () => {
 
   const onRegisterSubmit = async (data: RegisterFormValues) => {
     try {
+      console.log("Iniciando fluxo de registro com separação auth/perfil");
+      
+      // 1. Primeiro registra na autenticação (apenas email/senha)
+      console.log("1. Registrando usuário na autenticação");
       await signUp(data.email, data.password, data.name);
-      // Usuário será redirecionado automaticamente após o login
+      
+      try {
+        // 2. Em seguida, faz login para pegar a sessão autenticada
+        console.log("2. Fazendo login após registro bem-sucedido");
+        await signIn(data.email, data.password);
+        
+        // 3. Cria o perfil do usuário na tabela account_user
+        console.log("3. Criando perfil de usuário no banco de dados");
+        await createProfile(data.name, data.email);
+        
+        // 4. Redireciona para dashboard após todas as etapas
+        console.log("4. Redirecionando para o dashboard");
+        setLocation("/dashboard");
+      } catch (profileError) {
+        console.error("Erro após autenticação:", profileError);
+        throw profileError;
+      }
     } catch (error) {
       console.error("Erro durante o registro:", error);
     }
