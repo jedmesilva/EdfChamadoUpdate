@@ -60,14 +60,14 @@ export default async function handler(req, res) {
   // Usar a chave de serviço em vez da chave anônima para operações de API backend
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  
+
   // Escolha a chave apropriada (preferencialmente a chave de serviço)
   const supabaseKey = supabaseServiceKey || supabaseAnonKey;
 
   console.log(`Configurando Supabase com URL: ${supabaseUrl ? 'disponível' : 'não disponível'}, 
             ROLE KEY: ${supabaseServiceKey ? 'disponível' : 'não disponível'},
             ANON KEY: ${supabaseAnonKey ? 'disponível' : 'não disponível'}`);
-  
+
   if (!supabaseUrl || !supabaseKey) {
     console.error('Configuração do Supabase não encontrada no ambiente');
     return res.status(500).json({ 
@@ -78,7 +78,7 @@ export default async function handler(req, res) {
   try {
     // Extrair dados de registro
     const { email, password, name } = req.body;
-    
+
     if (!email || !password || !name) {
       return res.status(400).json({ 
         error: "Email, senha e nome são obrigatórios" 
@@ -86,7 +86,7 @@ export default async function handler(req, res) {
     }
 
     console.log(`Processando registro para o email: ${email}`);
-    
+
     // Inicializar cliente Supabase com SERVICE ROLE (bypass RLS)
     const supabase = createClient(supabaseUrl, supabaseKey, {
       auth: {
@@ -94,7 +94,7 @@ export default async function handler(req, res) {
         persistSession: false
       }
     });
-    
+
     // Verificar se o cliente supabase está funcionando
     console.log('Verificando acesso ao Supabase...');
     try {
@@ -110,11 +110,11 @@ export default async function handler(req, res) {
     } catch (testCatchError) {
       console.error('Exceção ao testar conexão com o Supabase:', testCatchError);
     }
-    
+
     // 1. Verificar se o usuário já existe
     const { data: existingUser, error: userError } = await supabase
       .auth.admin.getUserByEmail(email);
-      
+
     if (userError && userError.code !== 'PGRST116') {
       console.error('Erro ao verificar usuário existente:', userError);
       return res.status(500).json({
@@ -122,14 +122,14 @@ export default async function handler(req, res) {
         details: userError.message
       });
     }
-    
+
     if (existingUser) {
       console.log(`Usuário já existe no Auth: ${email}`);
       return res.status(409).json({
         error: 'Este email já está registrado'
       });
     }
-    
+
     // 2. Criar o usuário na tabela auth.users com metadados
     const { data: authUserData, error: signUpError } = await supabase.auth.admin.createUser({
       email,
@@ -147,9 +147,9 @@ export default async function handler(req, res) {
         details: signUpError.message
       });
     }
-    
+
     const authUser = authUserData.user;
-    
+
     if (!authUser) {
       return res.status(500).json({
         error: 'Falha ao criar usuário no Supabase Auth'
@@ -159,9 +159,72 @@ export default async function handler(req, res) {
     // Não tente criar profile, apenas registre o usuário na auth.users
     // O perfil será criado em um passo separado após o login
     console.log(`Usuário registrado apenas na auth.users. O perfil será criado após o login.`);
-    
+
+    // Criar o registro na account_user
+    console.log(`Criando registro na account_user para ${email} com ID ${authUser.id}`);
+
+    // Primeiro verifica se já existe um registro
+    const { data: existingAccount, error: checkError } = await supabase
+      .from('account_user')
+      .select('*')
+      .eq('user_id', authUser.id)
+      .single();
+
+    if (checkError && checkError.code !== 'PGRST116') {
+      console.error('Erro ao verificar conta existente:', checkError);
+    }
+
+    if (existingAccount) {
+      console.log('Conta já existe, atualizando dados');
+      const { data: accountUser, error: accountError } = await supabase
+        .from('account_user')
+        .update({
+          name,
+          email,
+          status: 'active',
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', authUser.id)
+        .select()
+        .single();
+
+      if (accountError) {
+        console.error('Erro ao atualizar registro na account_user:', accountError);
+        throw accountError;
+      }
+
+      return res.status(201).json({
+        message: "Usuário criado com sucesso",
+        userId: authUser.id, 
+        email: authUser.email,
+        name: name, // Retorna o nome fornecido
+        needsProfile: true // Flag indicando que o perfil precisa ser criado após o login
+      });
+    }
+
+    // Se não existe, cria um novo registro
+    const { data: accountUser, error: accountError } = await supabase
+      .from('account_user')
+      .insert({
+        id: authUser.id,
+        user_id: authUser.id,
+        name,
+        email,
+        status: 'active',
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (accountError) {
+      console.error('Erro ao criar registro na account_user:', accountError);
+      console.error('Detalhes do erro:', accountError.details);
+      console.error('Código do erro:', accountError.code);
+      throw accountError;
+    }
+
     console.log(`Usuário cadastrado com sucesso: ${email}, ID: ${authUser.id}`);
-    
+
     return res.status(201).json({
       message: "Usuário criado com sucesso",
       userId: authUser.id, 
@@ -169,7 +232,7 @@ export default async function handler(req, res) {
       name: name, // Retorna o nome fornecido
       needsProfile: true // Flag indicando que o perfil precisa ser criado após o login
     });
-    
+
   } catch (error) {
     console.error('Erro ao processar registro:', error);
     return res.status(500).json({ 
